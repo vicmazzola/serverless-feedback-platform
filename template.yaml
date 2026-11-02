@@ -1,0 +1,114 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: FIAP serverless student feedback platform
+Parameters:
+  AdministratorEmail:
+    Type: String
+    Description: Email address subscribed to the notification and weekly report SNS topics.
+Resources:
+  FeedbackApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: Prod
+      EndpointConfiguration: REGIONAL
+  EvaluationsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+        - AttributeName: sk
+          AttributeType: S
+        - AttributeName: reportWeek
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+        - AttributeName: sk
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: ReportWeekIndex
+          KeySchema:
+            - AttributeName: reportWeek
+              KeyType: HASH
+            - AttributeName: sk
+              KeyType: RANGE
+          Projection: { ProjectionType: ALL }
+      StreamSpecification: { StreamViewType: NEW_IMAGE }
+      SSESpecification: { SSEEnabled: true }
+  CriticalFeedbackTopic:
+    Type: AWS::SNS::Topic
+  WeeklyReportTopic:
+    Type: AWS::SNS::Topic
+  CriticalFeedbackSubscription:
+    Type: AWS::SNS::Subscription
+    Properties: { TopicArn: !Ref CriticalFeedbackTopic, Protocol: email, Endpoint: !Ref AdministratorEmail }
+  WeeklyReportSubscription:
+    Type: AWS::SNS::Subscription
+    Properties: { TopicArn: !Ref WeeklyReportTopic, Protocol: email, Endpoint: !Ref AdministratorEmail }
+  FeedbackFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: feedback-api/target/function.zip
+      Handler: io.quarkus.amazon.lambda.runtime.QuarkusStreamHandler::handleRequest
+      Runtime: java21
+      MemorySize: 1024
+      Timeout: 20
+      Environment: { Variables: { FEEDBACK_TABLE_NAME: !Ref EvaluationsTable } }
+      Policies:
+        - DynamoDBWritePolicy: { TableName: !Ref EvaluationsTable }
+      Events:
+        SubmitEvaluation:
+          Type: Api
+          Properties: { RestApiId: !Ref FeedbackApi, Path: /avaliacao, Method: post }
+  NotificationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: notification-lambda/target/notification-lambda.jar
+      Handler: br.com.fiap.feedback.notification.CriticalNotificationHandler::handleRequest
+      Runtime: java21
+      MemorySize: 512
+      Timeout: 30
+      Environment: { Variables: { NOTIFICATION_TOPIC_ARN: !Ref CriticalFeedbackTopic } }
+      Policies:
+        - SNSPublishMessagePolicy: { TopicName: !GetAtt CriticalFeedbackTopic.TopicName }
+      Events:
+        EvaluationStream:
+          Type: DynamoDB
+          Properties: { Stream: !GetAtt EvaluationsTable.StreamArn, StartingPosition: LATEST, BatchSize: 10, MaximumRetryAttempts: 3 }
+  ReportFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: report-lambda/target/report-lambda.jar
+      Handler: br.com.fiap.feedback.report.WeeklyReportHandler::handleRequest
+      Runtime: java21
+      MemorySize: 512
+      Timeout: 30
+      Environment: { Variables: { FEEDBACK_TABLE_NAME: !Ref EvaluationsTable, REPORT_TOPIC_ARN: !Ref WeeklyReportTopic } }
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: dynamodb:Query
+              Resource: [ !GetAtt EvaluationsTable.Arn, !Sub '${EvaluationsTable.Arn}/index/ReportWeekIndex' ]
+            - Effect: Allow
+              Action: sns:Publish
+              Resource: !Ref WeeklyReportTopic
+      Events:
+        WeeklySchedule:
+          Type: ScheduleV2
+          Properties:
+            ScheduleExpression: cron(0 8 ? * MON *)
+            ScheduleExpressionTimezone: America/Sao_Paulo
+            FlexibleTimeWindow: { Mode: 'OFF' }
+  FeedbackErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties: { AlarmDescription: Feedback Lambda errors, Namespace: AWS/Lambda, MetricName: Errors, Dimensions: [ { Name: FunctionName, Value: !Ref FeedbackFunction } ], Statistic: Sum, Period: 300, EvaluationPeriods: 1, Threshold: 1, ComparisonOperator: GreaterThanOrEqualToThreshold, TreatMissingData: notBreaching }
+  NotificationErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties: { AlarmDescription: Notification Lambda errors, Namespace: AWS/Lambda, MetricName: Errors, Dimensions: [ { Name: FunctionName, Value: !Ref NotificationFunction } ], Statistic: Sum, Period: 300, EvaluationPeriods: 1, Threshold: 1, ComparisonOperator: GreaterThanOrEqualToThreshold, TreatMissingData: notBreaching }
+  ReportErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties: { AlarmDescription: Report Lambda errors, Namespace: AWS/Lambda, MetricName: Errors, Dimensions: [ { Name: FunctionName, Value: !Ref ReportFunction } ], Statistic: Sum, Period: 300, EvaluationPeriods: 1, Threshold: 1, ComparisonOperator: GreaterThanOrEqualToThreshold, TreatMissingData: notBreaching }
+Outputs:
+  FeedbackApiUrl: { Value: !Sub 'https://${FeedbackApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/avaliacao' }
