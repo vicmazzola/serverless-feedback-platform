@@ -42,6 +42,8 @@ The API returns `201` for valid input, `400` for invalid/missing fields, and `50
 
 `template.yaml` defines API Gateway, DynamoDB/stream, SNS, three Java 21 Lambdas, a Monday 08:00 `America/Sao_Paulo` ScheduleV2 trigger and CloudWatch Lambda-error alarms. DynamoDB is on-demand and encrypted at rest. Policies limit Feedback to table write, Report to table/index query and its topic publish, and Notification to its topic publish.
 
+Maven creates the three Lambda artifacts before SAM runs. Their SAM resources use `Metadata: SkipBuild: true`, so `sam build` copies the prebuilt Quarkus ZIP and shaded Java JARs instead of treating an artifact JAR as a Maven source directory.
+
 The API deliberately has no authentication for the academic demo. Add an authorizer before public exposure. Review Lambda logs, Errors/Duration and stream iterator age in CloudWatch. Costs may arise from Lambda, API Gateway, DynamoDB, SNS, EventBridge and CloudWatch; configure AWS Budgets and delete the stack after the demonstration.
 
 ## Manual deployment

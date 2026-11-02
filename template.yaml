@@ -49,6 +49,8 @@ Resources:
     Properties: { TopicArn: !Ref WeeklyReportTopic, Protocol: email, Endpoint: !Ref AdministratorEmail }
   FeedbackFunction:
     Type: AWS::Serverless::Function
+    Metadata:
+      SkipBuild: true
     Properties:
       CodeUri: feedback-api/target/function.zip
       Handler: io.quarkus.amazon.lambda.runtime.QuarkusStreamHandler::handleRequest
@@ -64,6 +66,8 @@ Resources:
           Properties: { RestApiId: !Ref FeedbackApi, Path: /avaliacao, Method: post }
   NotificationFunction:
     Type: AWS::Serverless::Function
+    Metadata:
+      SkipBuild: true
     Properties:
       CodeUri: notification-lambda/target/notification-lambda.jar
       Handler: br.com.fiap.feedback.notification.CriticalNotificationHandler::handleRequest
@@ -79,6 +83,8 @@ Resources:
           Properties: { Stream: !GetAtt EvaluationsTable.StreamArn, StartingPosition: LATEST, BatchSize: 10, MaximumRetryAttempts: 3 }
   ReportFunction:
     Type: AWS::Serverless::Function
+    Metadata:
+      SkipBuild: true
     Properties:
       CodeUri: report-lambda/target/report-lambda.jar
       Handler: br.com.fiap.feedback.report.WeeklyReportHandler::handleRequest
