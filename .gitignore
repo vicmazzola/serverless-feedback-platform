@@ -19,3 +19,11 @@ target/
 # OS files
 .DS_Store
 Thumbs.db
+
+
+# Academic reference files
+docs/*.pdf
+
+# Temporary Maven files
+tmp/
+*.lastUpdated
