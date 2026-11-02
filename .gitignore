@@ -23,6 +23,7 @@ Thumbs.db
 
 # Academic reference files
 docs/*.pdf
+docs/requirements.md
 
 # Temporary Maven files
 tmp/
